@@ -1,0 +1,24 @@
+id_file:			name_of_fam_file_here
+id_col:               		0
+qc_subset_col:                  5
+race_subset_col:                6
+indiv_summary:              	indiv_summary.out
+maxDP:                  	500
+maxTranche:                	99.7
+minDP:              		10
+minGQ:                    	20
+start_bp:			0
+end_bp:				999999999
+min_call_rate:                	0.8
+read_capture:			0
+usegz:				0
+snv_summary:                	snv_summary.out
+output_prefix:                  unique_prefix_here
+vcf:                		name_of_vcf_file_here
+add2mapsegments:                0
+capture_relations:              capture_info.txt
+isX:                            0
+PAR:                            10001 2781479 155701383 156030895
+chr:                            chrX
+
+

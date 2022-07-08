@@ -1,0 +1,2 @@
+PCRFree_HiSeqX		all.bed
+PCRFree_NovaSeq		all.bed
