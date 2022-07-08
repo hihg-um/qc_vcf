@@ -5,7 +5,7 @@ use 5.010;
 #use Statistics::R;
 
 if($#ARGV != 0){
-	print "QC-version 05/18/2022 11:28am by Mike Schmidt, mschmidt\@med.miami.edu\n";
+	print "QC-version 07/08/2022 10:29am by Mike Schmidt, mschmidt\@med.miami.edu\n";
 	die "args: <control file>\n";
 	
 }
@@ -1699,9 +1699,9 @@ sub get_data
 	my($line);
 	my($found);
 	my($temp);
-	my($i);
+	my($i, $j);
 	my($nl);
-	my(@lst);
+	my(@lst, @lst2);
 	open(inf,"<$infile") or die "Can not open control file $infile\n";
 
 	seek(inf, 0, 0);
@@ -1973,7 +1973,14 @@ sub get_data
 			$line =~ s/^\s+//;
 			if($line =~ m/^PAR:/){
 				$line =~ s/^\S+\s+//;
-				@lst = split(/\s+/, $line);
+				@lst2 = split(/\s+/, $line);
+				$j = 0;
+				for($i = 0; $i < @lst2; $i++){
+					if($lst2[$i] =~ m/^[0-9]+$/){
+						$lst[$j] = $lst2[$i];
+						$j++;
+					}
+				}
 				@lst = sort{$a <=> $b}@lst;
 				$nl = "";
 				for($i = 0; $i < @lst; $i ++){

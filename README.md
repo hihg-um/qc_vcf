@@ -23,8 +23,8 @@ vcf:                		        name_of_vcf_file_here			    # your VCF here
 add2mapsegments:                0					                    # add this many bp to each map segment
 capture_relations:              capture_info.txt
 isX:                            0					                    # change to 1 if is chrX
-PAR:                            10001 2781479 155701383 156030895
-chr:                            chrX
+PAR:                            10001 2781479 155701383 156030895			# depending on the genetic map used these numbers might change
+chr:                            chrX							# must correspond to 1st column in VCF, chr1, chr2, ..., chrX
 
 
 The .fam file has the following format:
