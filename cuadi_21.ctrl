@@ -1,0 +1,17 @@
+id_file:			cuadi.fam
+id_col:               		0
+qc_subset_col:                  5
+race_subset_col:                6
+indiv_summary:              	indiv_summary_21.out
+maxDP:                  	500
+maxTranche:                	99.7
+minDP:              		10
+minGQ:                    	20
+min_call_rate:                	0.8
+snv_summary:                	snv_summary_21.out
+vcf:                		/Volumes/um/shared/studies/CUADI-pVCF/CUADI-wgs.chr21.snp.indel.recalibrated.vcf.gz
+add2mapsegments:                0
+capture_relations:              capture_info.txt
+isX:                            0
+PAR:                            10001 2781479 155701383 156030895
+chr:                            chr21

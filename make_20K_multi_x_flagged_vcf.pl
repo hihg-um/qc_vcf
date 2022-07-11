@@ -7,7 +7,6 @@ use 5.010;
 if($#ARGV != 0){
 	print "QC-version 07/08/2022 10:29am by Mike Schmidt, mschmidt\@med.miami.edu\n";
 	die "args: <control file>\n";
-	
 }
 
 =begin
