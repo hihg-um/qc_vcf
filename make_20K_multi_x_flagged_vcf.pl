@@ -5,8 +5,9 @@ use 5.010;
 #use Statistics::R;
 
 if($#ARGV != 0){
-	print "QC-version 07/08/2022 10:29am by Mike Schmidt, mschmidt\@med.miami.edu\n";
+	print "QC-version 07/13/2022 12:28pm by Mike Schmidt, mschmidt\@med.miami.edu\n";
 	die "args: <control file>\n";
+	
 }
 
 =begin
@@ -47,9 +48,9 @@ my(@qc_group_map);																				# which map-vlue to use for the qc_lookup
 $ctrlfile = $ARGV[0];
 $ref1 = get_data($ctrlfile);																	# read the control file and fill in defaults as needed
 %parameters = %$ref1;
-my($debug_info) = "dbg_" . $parameters{"vcf"};
-our($dbg_handle);
-open($dbg_handle,">$debug_info");
+#my($debug_info) = "dbg_" . $parameters{"vcf"};
+#our($dbg_handle);
+#open($dbg_handle,">$debug_info");
 display_parameters(\%parameters);																# print to stdout what was entered or used as default
 $vcf =  $parameters{"vcf"};																		# the raw VCF data file
 my($id_file) = $parameters{"id_file"};															# the .fam file. It is expected to have the same IDs in the exact same order as the VCF
@@ -83,7 +84,7 @@ my(@endpoints);
 if($parameters{"read_capture"}){
 	print stderr "reading $vcf 1st pass\n";
 	($ref1, $ref2, $ref3, $bp_cnt) = get_vcf_positions($vcf);
-	print $dbg_handle "\n$bp_cnt positions\n\n";
+#	print $dbg_handle "\n$bp_cnt positions\n\n";
 	%bp_hash = %$ref1;
 	@bp_lst = @$ref2;
 	@endpoints = @$ref3;
@@ -122,7 +123,7 @@ for($i = 0; $i < @race_names; $i++){
 
 print stderr "reading $vcf final pass\n";
 read_vcf($vcf, \%parameters, \@keep, \@sample_ids, \@sex, \@race_groups, \@qc_groups, \@par_index, \%index, \@race_names, \@qc_names, $ref1, $race_grp_cnt, $qc_grp_cnt, \@aff_stat, \@usehwe, \%capture_lookup, \@qc_group_map, $target_size, $shortest_seg, \@male_thresholds, @real_sex);
-close($dbg_handle);
+#close($dbg_handle);
 
 
 ##################################
@@ -151,7 +152,6 @@ sub read_vcf
 	my($shortest_seg) = $_[19];
 	my($ref16) = $_[20];
 	my($ref17) = $_[21];
-	open(dbg,">debug.txt");
 	my(@male_thresholds) = @$ref16;													# the MAX # of male hets has to be LESS-Equal than this number
 	my($key, $val);
 	my(%parameters) = %$ref1;														# program global parameters
@@ -395,7 +395,7 @@ sub read_vcf
 
 	print STDERR "\nprocessing $infile\n";
 	$infile =~ s/\.gz$//;
-	print $dbg_handle "bp\tREF\tALT\tVTYPE\t@qc_names\n";	
+#	print $dbg_handle "bp\tREF\tALT\tVTYPE\t@qc_names\n";	
 	@lst = split(/\//, $infile);
 	$info = $lst[$#lst];
 	for($i = 0; $i < @qc_names; $i++){												# setup various headers needed for summary files
@@ -429,10 +429,12 @@ sub read_vcf
 		open($outstream[$i],">$outnames[$i]");
 		$temp = $outstream[$i];
 		print $temp "$headers[$i]\n";
+=begin
 		if($debug){
 			$temp = $qc_names[$i] . ".dbg";
 			open($dbg_out[$i],">$temp");
 		}
+=cut
 	} # for($i = 0; $i < @qc_names; $i++){
 	
 	$temp =  $output_prefix . "flagged_" . $info;													# outfile.vcf, either compressed or uncompressed just like input.vcf
@@ -711,13 +713,14 @@ sub read_vcf
 					$race_gt_cnt_f[$qc_id][$race_id][$missing_gt_index]++;				
 				}
 				$flagged_line .=  "\t" . $lst[$j];														# 3 = missing genotype
-				
+=begin				
 				if($debug){
 					$temp = $dbg_out[$qc_id];
 					$dp = 0;
 					$gq = 0;
 					$gt = "./.";
 				}
+=cut
 				next;
 			}
 			
@@ -1134,7 +1137,7 @@ sub read_vcf
 
 		$vtype = get_vtype($ref, $var);
 		
-		print $dbg_handle "$bp\t$ref\t$var\t$vtype\t@vflag\n";
+#		print $dbg_handle "$bp\t$ref\t$var\t$vtype\t@vflag\n";
 		for($i = 0; $i < @qc_names; $i++){
 			$abh_str = "ABHet_" . $qc_names[$i] . "=";
 			$str_abh[$i] = "";
@@ -1400,10 +1403,12 @@ sub read_vcf
 	for($i = 0; $i < @qc_names; $i++){
 		$temp = $outstream[$i];
 		close($temp);
+=begin		
 		if($debug){
 			$temp = $dbg_out[$i];
 			close($temp);
 		}
+=cut		
 	}
 	if($debug){
 		close($dbg_main);
@@ -1542,7 +1547,7 @@ sub print_indiv_master
 	my($titv);
 	my($t1, $t2, $t3, $t4);
 	my($passstr, $failstr);
-	$outfile .= "_" . $parameters{"chr"} . "_";
+	$outfile .= $parameters{"chr"} . "_";
 	$outfile .= $parameters{"indiv_summary"};
 	open(out,">$outfile");
 	print out "SampleID\tSex\tPass\tFail\tMissing\tSingleton\tPrivate_Doubleton\tDoubleton\tHetHom\tIndMeanDepth\t1P_MI\t2P_MI\tMI_pairs\tTi\tTv\tTiTvRatio\n";
@@ -2265,9 +2270,9 @@ sub display_parameters
 	
 	for($i = 0; $i < @sorted; $i++){													# print
 		printf("# %20s = %30s\n", $sorted[$i][0], $sorted[$i][1]);
-		printf($dbg_handle "# %20s = %30s\n", $sorted[$i][0], $sorted[$i][1]);
+#		printf($dbg_handle "# %20s = %30s\n", $sorted[$i][0], $sorted[$i][1]);
 	}
-	print $dbg_handle "\n";
+#	print $dbg_handle "\n";
 #	close(out);
 }
 
@@ -2552,11 +2557,11 @@ sub read_pedfile
 	undef(@gr_lst);
 	$ref = find_male_het_thresholds(\@male_cnt, $parameters{"error_threshold"}, $parameters{"error_rate"});
 	my(@male_thresholds) = @$ref;
-	print $dbg_handle "\tQC-subset\tmale_cnt\tmale_het_threshold(less_or_equal)\n";
-	for($i = 0; $i < @qc_names; $i++){
-		printf($dbg_handle "%80s\t%6i\t%3i\n",$qc_names[$i], $male_cnt[$i], $male_thresholds[$i]);
-	}
-
+#	print $dbg_handle "\tQC-subset\tmale_cnt\tmale_het_threshold(less_or_equal)\n";
+#	for($i = 0; $i < @qc_names; $i++){
+#		printf($dbg_handle "%80s\t%6i\t%3i\n",$qc_names[$i], $male_cnt[$i], $male_thresholds[$i]);
+#	}
+	unlink("temp_input.fam");
 #open(out,">qc_groups_sample.txt");
 #for($i = 0; $i < @sampleids; $i++){
 #	print out "$sampleids[$i]\t$qc_groups[$i]\tfa=$parent_index[$i][0]\tmo=$parent_index[$i][1]\n";
@@ -2804,6 +2809,7 @@ sub qc_group_cnt
 		}
 	}
 	print "\n\t";
+=begin
 	for($j = 0; $j < @race_names; $j++){
 		print $dbg_handle "\t$race_names[$j]";
 	}
@@ -2816,6 +2822,7 @@ sub qc_group_cnt
 		print $dbg_handle "\n";
 	}	
 	print $dbg_handle "\n";
+=cut
 	return(\@qc_race_cnt);
 }
 
