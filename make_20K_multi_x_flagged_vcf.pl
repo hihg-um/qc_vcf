@@ -5,7 +5,7 @@ use 5.010;
 #use Statistics::R;
 
 if($#ARGV != 0){
-	print "QC-version 07/13/2022 12:28pm by Mike Schmidt, mschmidt\@med.miami.edu\n";
+	print "QC-version 07/18/2022 6:48pm by Mike Schmidt, mschmidt\@med.miami.edu\n";
 	die "args: <control file>\n";
 	
 }
@@ -798,6 +798,14 @@ sub read_vcf
 					else{
 						$rgt_m++;
 					}
+					if(!$isx){
+						if($alleles[1] > 0){
+							$agt_m++;
+						}
+						else{
+							$rgt_m++;
+						}					
+					}
 				}
 				elsif($sex[$j] == 1){
 					$qc_gt_cnt_f[$qc_id][$gtnum]++;
@@ -874,6 +882,7 @@ sub read_vcf
 			$lst[$j] = $gt . $lst[$j];
 			$flagged_line .= "\t" . $lst[$j];
 		} # for($j = 0; $j < @lst; $j++){
+
 		if(($agt_m + $agt_f) <= ($rgt_m + $rgt_f)){
 			$agt = $agt_m + $agt_f;
 			$normal = 1;
@@ -1210,8 +1219,14 @@ sub read_vcf
 				for($k = 0; $k < @genotypes; $k++){													# step through all genotypes
 					if($genotypes[$k] > 0 && $keep[$k]){
 						if($genotypes[$k] >= $allele_cnt){
-							$indivmaster[$k][3]++;													# private doubleton, 2 alt alleles
-							$temp += 2;
+							if($isx && ($sex[$k] == 0)){
+								$indivmaster[$k][4]++;
+								$temp++;
+							}
+							else{
+								$indivmaster[$k][3]++;													# private doubleton, 2 alt alleles
+								$temp += 2;
+							}
 						}
 						else{
 							$indivmaster[$k][4]++;													# doubleton, 1 alt allele
@@ -1227,8 +1242,14 @@ sub read_vcf
 				for($k = 0; $k < @genotypes; $k++){													# step through all genotypes
 					if($genotypes[$k] < $allele_cnt && $keep[$k]){
 						if($genotypes[$k] == 0){													# private doubleton, 2 ref alleles
-							$indivmaster[$k][3]++;
-							$temp += 2;
+							if($isx && ($sex[$k] == 0)){
+								$indivmaster[$k][4]++;
+								$temp++;						
+							}
+							else{
+								$indivmaster[$k][3]++;
+								$temp += 2;
+							}
 						}
 						elsif($genotypes[$k] > 0){
 							$indivmaster[$k][4]++;							
@@ -1328,6 +1349,7 @@ sub read_vcf
 
 			for($j = 0; $j < $max_gt_cnt; $j++){
 				$pass_str .= sprintf("%i,",$qc_gt_cnt_f[$i][$j]);										# list of passing genotypes
+#print "qc_gt_cnt_f[$i][$j] = $qc_gt_cnt_f[$i][$j]\n";
 				$num += $qc_gt_cnt_f[$i][$j];
 				$index = $j + $max_gt_cnt;
 				$fail_str .= sprintf("%i,",$qc_gt_cnt_f[$i][$index]);									# list of failed genotypes
