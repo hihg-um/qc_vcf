@@ -5,7 +5,7 @@ use 5.010;
 #use Statistics::R;
 
 if($#ARGV != 0){
-	print "QC-version 07/18/2022 6:48pm by Mike Schmidt, mschmidt\@med.miami.edu\n";
+	print "QC-version 10/26/2022 1:46pm by Mike Schmidt, mschmidt\@med.miami.edu\n";
 	die "args: <control file>\n";
 	
 }
@@ -319,6 +319,11 @@ sub read_vcf
 	my($m_ref, $m_alt);																# chrX male genotype counts, REF versus ALT (combined if more than 1 ALT)
 	my($chr23) = 0;																	# pull out PAR and relabel chr23 into seperate VCF
 	my($line_cnt) = 0;																# to give progress indicator
+	my($dbg_id) = -1;
+	my($singleton_awarded);
+	my($singleton_pass);
+	my(@single, @sing_m, @sing_f);
+	my($sum_alt, $sum_ref);
 	$start_bp += 0;
 	$end_bp += 0;
 
@@ -395,7 +400,7 @@ sub read_vcf
 
 	print STDERR "\nprocessing $infile\n";
 	$infile =~ s/\.gz$//;
-#	print $dbg_handle "bp\tREF\tALT\tVTYPE\t@qc_names\n";	
+#open(dbg, ">debug_sing.txt");	
 	@lst = split(/\//, $infile);
 	$info = $lst[$#lst];
 	for($i = 0; $i < @qc_names; $i++){												# setup various headers needed for summary files
@@ -444,7 +449,7 @@ sub read_vcf
 			open($flg, "| bgzip -c > $temp.gz");
 		}
 		else{
-			open($flg,">$temp");
+			open($flg,"> $temp");
 		}
 	}
 
@@ -467,6 +472,7 @@ sub read_vcf
 # all the individual stats are not used in the multi-allelic case but probably will at some point in the future. So they stay in the code for now.
 				for($j = 0; $j < @sample_ids; $j++){									# init individual array
 					$indivmaster[$j][0] = $sample_ids[$j];								# name
+
 					$indivmaster[$j][1] = 0;											# missing genotypes
 					$indivmaster[$j][2] = 0;											# singleton
 					$indivmaster[$j][3] = 0;											# private doubleton
@@ -883,14 +889,7 @@ sub read_vcf
 			$flagged_line .= "\t" . $lst[$j];
 		} # for($j = 0; $j < @lst; $j++){
 
-		if(($agt_m + $agt_f) <= ($rgt_m + $rgt_f)){
-			$agt = $agt_m + $agt_f;
-			$normal = 1;
-		}
-		else{
-			$agt = $rgt_m + $rgt_f;
-			$normal = 0;
-		}	
+		$agt = $agt_m + $agt_f;
 		$endpoint = $bp - 1 + length($ref);																# get the endpoints of the REF segment
 		$curpt = $bp;
 		if($use_capture){
@@ -1196,70 +1195,35 @@ sub read_vcf
 		$pos = $&;
 		$head =~ s/^\S+\s+\S+\s+//;
 		if($agt == 1){
-			if($normal){
-				for($k = 0; $k < @genotypes; $k++){													# step through all genotypes
-					if(($genotypes[$k] > 0) && $keep[$k]){
-						$indivmaster[$k][2]++;														# singleton on ALT
-						last;
-					}
-				}
-			}
-			else{
-				for($k = 0; $k < @genotypes; $k++){
-					if(($genotypes[$k] > 0) && ($genotypes[$k] < $allele_cnt) && $keep[$k]){
-						$indivmaster[$k][2]++;														# singleton on REF
-						last;
-					}
+			for($k = 0; $k < @genotypes; $k++){													# step through all genotypes
+				if(($genotypes[$k] > 0) && $keep[$k]){
+					$indivmaster[$k][2]++;														# singleton on ALT
+					last;
 				}
 			}
 		}
 		elsif($agt == 2){
 			$temp = 0;
-			if($normal){
-				for($k = 0; $k < @genotypes; $k++){													# step through all genotypes
-					if($genotypes[$k] > 0 && $keep[$k]){
-						if($genotypes[$k] >= $allele_cnt){
-							if($isx && ($sex[$k] == 0)){
-								$indivmaster[$k][4]++;
-								$temp++;
-							}
-							else{
-								$indivmaster[$k][3]++;													# private doubleton, 2 alt alleles
-								$temp += 2;
-							}
+			for($k = 0; $k < @genotypes; $k++){													# step through all genotypes
+				if($genotypes[$k] > 0 && $keep[$k]){
+					if($genotypes[$k] >= $allele_cnt){
+						if($isx && ($sex[$k] == 0)){
+							$indivmaster[$k][4]++;												# chrX, male doubleton
+							$temp++;
 						}
 						else{
-							$indivmaster[$k][4]++;													# doubleton, 1 alt allele
-							$temp++;
+							$indivmaster[$k][3]++;												# private doubleton, 2 alt alleles
+							$temp += 2;
 						}
 					}
-					if($temp == 2){
-						last;
-					}				
+					else{
+						$indivmaster[$k][4]++;													# doubleton, 1 alt allele
+						$temp++;
+					}
 				}
-			}
-			else{																					# REF is minor allele
-				for($k = 0; $k < @genotypes; $k++){													# step through all genotypes
-					if($genotypes[$k] < $allele_cnt && $keep[$k]){
-						if($genotypes[$k] == 0){													# private doubleton, 2 ref alleles
-							if($isx && ($sex[$k] == 0)){
-								$indivmaster[$k][4]++;
-								$temp++;						
-							}
-							else{
-								$indivmaster[$k][3]++;
-								$temp += 2;
-							}
-						}
-						elsif($genotypes[$k] > 0){
-							$indivmaster[$k][4]++;							
-							$temp++;
-						}
-					}
-					if($temp == 2){
-						last;
-					}	
-				}	
+				if($temp == 2){
+					last;
+				}				
 			}
 		}
 		
@@ -1358,8 +1322,7 @@ sub read_vcf
 			$den += $num + $gtf;
 
 			$pass_str =~ s/\S$//;
-			$fail_str =~ s/\S$//;
-	
+			$fail_str =~ s/\S$//;	
 	
 			for($j = 0; $j < $allele_cnt; $j++){
 				$maf_str .= sprintf("%8.5f,", $mafp[$i][$j]);											# build MAF string for summary file
@@ -1403,6 +1366,7 @@ sub read_vcf
 			else{
 				printf($temp "%s\t%i\t%s\t%s\t%i\t%i\t%s\t%i\t%7.5f\t%i\t%i\t%s\t%7.5f\t%i\t%s\t%i\t%i\t%7.5f\t.\t%i\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%i\t%s\t%s\t%s\n",$chr, $bp, $pass_str, $fail_str, $miss, $gtf, $clean_str, $mono, $crate, $cb, $gpass, $maf_str, $depth, $hidp, $str_abh[$i], $mi_cnt, $total_mi, $prop_mi, $fout, $vflag[$i], $rsid, $ref, $var, $qual, $tranche, $vtype, $itr, $str_clean[$i], $str_hetz[$i], $str_hwe[$i]);			
 			}
+
 		} # for($i = 0; $i < @qc_names; $i++)
 
 		$k = $titv{"$ref$var"};
@@ -1442,7 +1406,7 @@ sub read_vcf
 	close(coh);
 	print_indiv_master(\%parameters, \@indivmaster, $const_max_gt, \@keep, \@real_sex);						
 	print "\n";
-	close(dbg);
+#	close(dbg);
 	if($chr23){
 		close($chr23);
 	}
