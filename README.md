@@ -45,3 +45,39 @@ Ethnicity for HWE and HetZ calculations
 useSample a 0 or 1 if this sample is to be included
 useHWE a 0 or 1 if this sample is to be included in HWE calculation
 CaptureMap needed for targeted maps, otherwise I can provide a “catch all” map
+This run in a docker container "hihg-um/mschmidt/perl"
+
+### to run docker
+
+docker run -it -v /home/mschmidt/workdir/thread:/data -v /home/mschmidt/workdir/thread/scratch:/data/scratch -v /home/mschmidt/workdir/thread/results:/data/results  --entrypoint=/bin/bash hihg-um/mschmidt/perl
+
+### control file
+
+id_file:			/data/cuadi.fam
+id_col:               		0
+qc_subset_col:                  5
+race_subset_col:                6
+indiv_summary:              	indiv_summary.out
+maxDP:                  	500
+maxTranche:                	99.7
+minDP:              		10
+minGQ:                    	20
+min_call_rate:                	0.8
+snv_summary:                	snv_summary.out
+output_prefix:                  chr21_
+scratch_dir:			/data/scratch
+output_dir:			/data/results
+vcf:                		/data/vcf/CUADI-wgs.chr21.snp.indel.recalibrated.vcf.gz
+add2mapsegments:                0
+capture_relations:              capture_info.txt
+isX:                            0
+PAR:                            10001 2781479 155701383 156030895
+chr:                            chr21
+threads:			4
+
+
+
+Assumptions:
+The following directories MUST exist:
+/home/mschmidt/workdir/thread/results
+/home/mschmidt/workdir/thread/scratch	(exclusive use by single instance of the script)
