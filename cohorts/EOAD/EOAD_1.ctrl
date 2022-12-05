@@ -1,4 +1,4 @@
-id_file:			        /Volumes/Synology/shared/qc_vcf/CUADI/cuadi.fam
+id_file:                    /hihg/studies/AD/cohort_vcf/EOAD_qc/EOAD.fam
 id_col:               		0
 qc_subset_col:              5
 race_subset_col:            6
