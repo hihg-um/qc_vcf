@@ -45,3 +45,52 @@ Ethnicity for HWE and HetZ calculations
 useSample a 0 or 1 if this sample is to be included
 useHWE a 0 or 1 if this sample is to be included in HWE calculation
 CaptureMap needed for targeted maps, otherwise I can provide a “catch all” map
+
+
+sven@HIHG-Ubuntu:~/checkout/hihg_um/qc_vcf$ docker run -v /hihg:/hihg -v /Volumes/Synology:/Volumes/Synology -v /home/sven/checkout/hihg_um/qc_vcf:/app  -it hihg-um/sven/perl make_20K_multi_x_flagged_thread_vcf.pl cuadi_1.ctrl
+Did not find printFLG: default = 1
+Did not find minDP_female: default = 10
+Did not find minDP_male: default = 10
+Did not find start_bp: default = 0
+Did not find start_bp: default = 999999999
+Did not find minStat to calculate pop. stats: default = 6
+Did not find usegz. Default= 0
+Did not find error_rate: default = 0.0001
+Did not find error_threshold: default = 0.0001
+Did not find read_capture: default = 0
+#      add2mapsegments =                              0
+#    capture_relations =               capture_info.txt
+#                  chr =                           chr1
+#               end_bp =                      999999999
+#           error_rate =                         0.0001
+#      error_threshold =                         0.0001
+#               id_col =                              0
+#              id_file = /Volumes/Synology/shared/qc_vcf/CUADI/cuadi.fam
+#        indiv_summary =              indiv_summary.out
+#                  isX =                              0
+#                maxDP =                            500
+#           maxTranche =                           99.7
+#         minDP_female =                             10
+#           minDP_male =                             10
+#                minGQ =                             20
+#              minStat =                              6
+#        min_call_rate =                            0.8
+#           output_dir =     /Volumes/Synology/results/
+#        output_prefix =                          chr1_
+#                pHWEx =                              0
+#             printFLG =                              1
+#        qc_subset_col =                              5
+#      race_subset_col =                              6
+#         read_capture =                              0
+#          scratch_dir =     /Volumes/Synology/scratch/
+#          snv_summary =                snv_summary.out
+#             start_bp =                              0
+#              threads =                             16
+#                usegz =                              0
+#                  vcf = /hihg/studies/AD/cohort_vcf/EOAD/vcf/EOAD-wgs.chr1.snp.indel.recalibrated.vcf.gz
+#              version = QC-version 10/25/2022 2:08pm by Mike Schmidt, mschmidt@med.miami.edu
+
+reading /Volumes/Synology/shared/qc_vcf/CUADI/cuadi.fam
+gzip: /hihg/studies/AD/cohort_vcf/EOAD/vcf/EOAD-wgs.chr1.snp.indel.recalibrated.vcf.gz: Permission denied
+Naming discrepancy between VCF () and pedfile (A-MIA-UM010501-BL-MIA-201819558). Input line 0
+Died at make_20K_multi_x_flagged_thread_vcf.pl line 2704, <inf> line 2.

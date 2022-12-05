@@ -1,0 +1,21 @@
+id_file:			        /Volumes/Synology/shared/qc_vcf/CUADI/cuadi.fam
+id_col:               		0
+qc_subset_col:              5
+race_subset_col:            6
+indiv_summary:              indiv_summary.out
+maxDP:                  	500
+maxTranche:                	99.7
+minDP:              		10
+minGQ:                    	20
+min_call_rate:              0.8
+snv_summary:                snv_summary.out
+output_prefix:              chr1_
+scratch_dir:			    /Volumes/Synology/scratch/qc_vcf
+output_dir:			        /Volumes/Synology/results
+vcf:                		/hihg/studies/AD/cohort_vcf/EOAD/vcf/EOAD-wgs.chr1.snp.indel.recalibrated.vcf.gz
+add2mapsegments:            0
+capture_relations:          capture_info.txt
+isX:                        0
+PAR:                        10001 2781479 155701383 156030895
+chr:                        chr1
+threads:			        16
