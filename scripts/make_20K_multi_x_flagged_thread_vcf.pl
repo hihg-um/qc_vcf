@@ -1,26 +1,5 @@
 #!/usr/bin/perl
 
-# qc_vcf 
-# Copyright (C) 2022
-# University of Miami Miller School of Medicine
-# John P. Hussman Institute for Human Genomics
-# Mike Schmidt <mschmidt@miami.edu>
-
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation; either version 2
-# of the License, or (at your option) any later version.
-
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-
-
 use strict;
 use 5.010;
 use threads;
@@ -29,7 +8,7 @@ use Cwd;
 
 #use Statistics::R;
 
-my($version) = "QC-version 10/25/2022 2:08pm by Mike Schmidt, mschmidt\@med.miami.edu\n";
+my($version) = "QC-version 12/13/2022 11:03am by Mike Schmidt, mschmidt\@med.miami.edu\n";
 if($#ARGV != 0){
 	print "$version";
 	die "args: <control file>\n";
@@ -117,28 +96,34 @@ my(@threads);
 my($th_name) = "";
 my($thread_cnt) = $parameters{"threads"};
 my(@endpoints);
-if($parameters{"read_capture"} || ($thread_cnt > 1)){
-	print stderr "reading $vcf 1st pass\n";
-	($ref1, $ref2, $ref3, $bp_cnt) = get_vcf_positions($vcf, $thread_cnt);
-#	print $dbg_handle "\n$bp_cnt positions\n\n";
-	%bp_hash = %$ref1;
-	@bp_lst = @$ref2;
-	@endpoints = @$ref3;
-}
-while(($key, $value) = each(%qc_assign)){
-	$qc_names[$value] = $key; 
-}
-
 my(%capture_lookup);
 my(@map_lst);
+
 if($parameters{"read_capture"}){
+	($ref1, $ref2, $ref3, $bp_cnt) = get_vcf_positions($vcf, 0, $parameters{"start_bp"}, $parameters{"end_bp"});
+	@bp_lst = @$ref2;
+	@endpoints = @$ref3;	
 	($ref1, $ref2) = get_capture_relations(\%capture, \%qc_assign, $parameters{"capture_relations"});
 	@qc_group_map = @$ref1;
 	@map_lst = @$ref2;
-
 	$ref1 = read_capture_maps(\@bp_lst, \@endpoints, \%bp_hash, \@map_lst, $parameters{"chr"});
-
 	%capture_lookup = %$ref1;
+	if($thread_cnt <= 1){
+		undef(@bp_lst);
+	}
+	undef(@endpoints);
+}
+
+if(($thread_cnt > 1) && (!$parameters{"read_capture"})){
+	print stderr "reading $vcf 1st pass\n";
+	($ref1, $ref2, $ref3, $bp_cnt) = get_vcf_positions($vcf, $thread_cnt, $parameters{"start_bp"}, $parameters{"end_bp"});
+#	print $dbg_handle "\n$bp_cnt positions\n\n";
+	%bp_hash = %$ref1;
+	@bp_lst = @$ref2;
+}
+
+while(($key, $value) = each(%qc_assign)){
+	$qc_names[$value] = $key; 
 }
 
 while(($key, $value) = each(%race_assign)){
@@ -165,7 +150,7 @@ if($thread_cnt > 1){
 	for($i = 0; $i < $thread_cnt; $i++){
 		$previous_pos++;
 		if($i == ($thread_cnt-1)){
-			$top_pos = $#bp_lst		
+			$top_pos = $#bp_lst;
 		}
 		else{
 			$top_pos = $previous_pos + $increment;
@@ -176,6 +161,7 @@ print "$i:\tstart=$bp_lst[$previous_pos]\tend=$bp_lst[$top_pos];\n";
 		$previous_pos = $top_pos;
 		$threads[$i] = threads->create(\&read_vcf, $vcf, \%parameters, \@keep, \@sample_ids, \@sex, \@race_groups, \@qc_groups, \@par_index, \%index, \@race_names, \@qc_names, $ref1, $race_grp_cnt, $qc_grp_cnt, \@aff_stat, \@usehwe, \%capture_lookup, \@qc_group_map, $target_size, $shortest_seg, \@male_thresholds, @real_sex, $i);
 	}
+	undef(@bp_lst);
 }
 else{
 	print stderr "reading $vcf final pass\n";
@@ -373,14 +359,13 @@ sub read_vcf
 	my($dbg1, $dbg2);																# debug variables
 	my(@lform);																		# array that holds descriptor (8th column)
 	my(@indivmaster);																# individual master array that keeps track of various counts over ALL positions
-	my(@indivslave);																# individual master array that keeps track of various counts over CURRENT position. added to master depending on VFLAG
+	my(@indivslave);																# individual master array that keeps track of alleles over CURRENT position. 
 	my(@position_pass_type);														# to facilitate final indiv mess. (0,1,2) is pass, VFLAG!=11, fail
 	my(@idindex);																	# IDs of individuals in order as they appear
 	my(@het_cnt);																	# count od genotypes used for het-Z
 	my(@headers);																	# the header in the companion file(s)
 	my(@an_lst);																	# see which alleles are left AFTER QC, some weaker ones might drop out, update ALT column
 	my($an);																		# allele count for INFO field AFTER QC
-	my($indivmastersize);															# size of @indivmaster
 	my($indexgt);																	# index for GT and DP and AD
 	my($indexdp);																	# position of DP in the format field. Sometimes those chage for different positions
 	my($indexad);																	# as above for AD
@@ -404,6 +389,7 @@ sub read_vcf
 	my(@mendincon);																	# mendelian incons. [0]= single-parent-off pairs with goog GT [1]= single-parent-off pairs incon [2]= single-parent-off pairs with non identical genotypes
 																					# [3] = triads with good GT [4]= triads with incons
 	my($missing);																	# missing calls per SNV
+	my($infile_base_name);															# without the ".gz" at the end
 	my(@vflag);																		# flag returned, one for each QC_GROUP
 	my(@snphwe);																	# one value per QC_group and RACE
 	my(@hetz);																		# one value per QC_group and RACE
@@ -525,13 +511,7 @@ sub read_vcf
 
 	my(@ps_auto);																	# 2 pseudo-autosomal regions to be excluded
 
-	if($infile =~ m/gz$/){															# open .gz or uncompressed text file.vcf
-		open($stream, "-|", "gzip -dc $infile") or die "Can not open infile $infile\n";
-		$usegz = 1;
-	}
-	else{
-		open($stream,"<$infile") or die "Can not open infile $infile\n";
-	}
+
 	if($isx){
 		@ps_auto = split(/\s+/, $parameters{"PAR"});
 		for($i = 0; $i < @ps_auto; $i++){
@@ -588,9 +568,10 @@ sub read_vcf
 
 
 	print STDERR "\nprocessing $infile\n";
-	$infile =~ s/\.gz$//;
+	$infile_base_name = $infile;
+	$infile_base_name =~ s/\.gz$//;
 #	print $dbg_handle "bp\tREF\tALT\tVTYPE\t@qc_names\n";	
-	@lst = split(/\//, $infile);
+	@lst = split(/\//, $infile_base_name);
 	$info = $lst[$#lst];
 	$temp = $scratch_dir . "reunion_" . "$th_name" . "_snv.txt";
 	open(reu,">$temp");
@@ -630,7 +611,7 @@ sub read_vcf
 		}
 	} # for($i = 0; $i < @qc_names; $i++){
 	close(reu);
-	$temp = reverse($infile);
+	$temp = reverse($infile_base_name);
 	$temp =~ s/\///;
 	$temp = $`;
 	$temp = reverse($temp);
@@ -672,24 +653,6 @@ sub read_vcf
 		$indivmaster[$j][21] = 0;											# pre-QC 0/alt set ./.
 		$indivmaster[$j][22] = 0;											# pre-QC alt/alt set ./.
 
-		$indivslave[$j][0] = $sample_ids[$j];								# name
-		$indivslave[$j][1] = 0;												# missing genotypes
-		$indivslave[$j][2] = 0;												# singleton
-		$indivslave[$j][3] = 0;												# private doubleton
-		$indivslave[$j][4] = 0;												# doubleton
-		$indivslave[$j][5] = 0;												# Ti
-		$indivslave[$j][6] = 0;												# Tv
-		$indivslave[$j][7] = 0;												# het. genotypes
-		$indivslave[$j][8] = 0;												# hom. genotypes
-		$indivslave[$j][9] = 0;												# sum depth of "PASS" genotypes
-		$indivslave[$j][10] = 0;											# parent count
-		$indivslave[$j][11] = 0;											# 1P MI count
-		$indivslave[$j][12] = 0;											# 2P MI count
-		$indivslave[$j][13] = 0;											# valid 1P counts
-		$indivslave[$j][14] = 0;											# valid 2P counts
-		$indivslave[$j][15] = 0;											# indel count
-		$indivslave[$j][16] = "";											# genotype	
-		$indivmastersize++;
 		if($keep[$j]){
 			$names .= $sample_ids[$j] . "\t";
 		}
@@ -697,13 +660,19 @@ sub read_vcf
 	$names =~ s/\s+$//;
 
 	if($th_name == 0){
+		if($infile =~ m/gz$/){															# open .gz or uncompressed text file.vcf
+			open($stream, "-|", "gzip -dc $infile") or die "Can not open infile 657 $infile\n";
+			$usegz = 1;
+		}
+		else{
+			open($stream,"<$infile") or die "Can not open infile 661 $infile\n";
+		}
 		while(chomp($line = <$stream>)){
 			if($line =~ m/^#/){
 				if($chr23){
 					print $chr23 "$line\n";
 				}
 				if($line =~ m/^#CHROM/){
-					$indivmastersize = 0;
 					$line =~ s/^(\S+\s+){9,9}//;
 					$head = $&;
 				
@@ -734,7 +703,7 @@ sub read_vcf
 						}
 					}
 				}
-			next;
+				next;
 			} # if($line =~ m/^#/)
 			else{
 				last;
@@ -843,6 +812,26 @@ print "thread $th_name query($line)\n";
 		undef(@race_gt_cnt_con_f);
 		undef(@qc_gt_cnt_f);		
 		undef(@abhet_cnt);
+		undef(@depth_cnt);
+		undef(@depth_sum);
+		undef(@genotypes);
+		undef(@vflag);
+		undef(@indivslave);
+		undef(@indiv);
+		undef(@altgt);
+		undef(@malehets);
+		undef(@validgt);
+		undef(@maf);
+		undef(@mafp);
+		undef(@rmaf);
+		undef(@an_lst);
+		undef(@hetz);
+		undef(@race_gt_cnt_con_f);
+		undef(@race_gt_cnt_f);
+		undef(@str_hetz);
+		undef(@str_hwe);
+		undef(@str_clean);
+		undef(@str_abh);
 		for($i = 0; $i < $qc_grp_cnt; $i++){															# init various arrays that count qc_subgroup specific stuff
 			for($m = 0; $m < ((2*$max_gt_cnt)+1); $m++){												# for: PASS, FAIL, missing								
 				$qc_gt_cnt_m[$i][$m] = 0;
@@ -871,24 +860,8 @@ print "thread $th_name query($line)\n";
 			}
 		} #for($i = 0; $i < $qc_grp_cnt; $i++)
 		for($i = 0; $i < @sample_ids; $i++){
-			$indivslave[$i][1] = 0;																		# missing genotypes
-			$indivslave[$i][2] = 0;																		# singleton
-			$indivslave[$i][3] = 0;																		# private doubleton
-			$indivslave[$i][4] = 0;																		# doubleton
-			$indivslave[$i][5] = 0;																		# Ti
-			$indivslave[$i][6] = 0;																		# Tv
-			$indivslave[$i][7] = 0;																		# het. genotypes
-			$indivslave[$i][8] = 0;																		# hom. genotypes
-			$indivslave[$i][9] = 0;																		# sum depth of "PASS" genotypes
-			$indivslave[$i][10] = 0;																	# depth SNV count
-			$indivslave[$i][11] = 0;																	# 1P MI count
-			$indivslave[$i][12] = 0;																	# 2P MI count
-			$indivslave[$i][13] = 0;																	# valid 1P counts
-			$indivslave[$i][14] = 0;																	# valid 2P counts
-			$indivslave[$i][15] = 0;																	# indel count
-			$indivslave[$i][16] = -999;																	# genotype	
-			$indivslave[$i][17] = -1;																	# allele 1
-			$indivslave[$i][18] = -1;																	# allele 2
+			$indivslave[$i][0] = -1;																	# allele 1
+			$indivslave[$i][1] = -1;																	# allele 2
 		}
 
 		$agt = 0;																						# Alternative GenoTypes, everything valid that is not 0/0
@@ -901,6 +874,7 @@ print "thread $th_name query($line)\n";
 			$race_id = $race_groups[$j];
 			$qc_id = $qc_groups[$j];
 			if($keep[$j] == 0){
+				$lst[$j] = 0;																			# maybe this saves some memory
 				next;
 			}
 			if($lst[$j] =~ m/^\./){																		# missing genotype
@@ -922,6 +896,7 @@ print "thread $th_name query($line)\n";
 					$gt = "./.";
 				}
 =cut
+				$lst[$j] = 0;																			# maybe this saves some memory
 				next;
 			}
 			
@@ -976,8 +951,8 @@ print "thread $th_name query($line)\n";
 				$gt = "./.";
 			}
 			elsif(($dp >= $mindp) && ($gq >= $mingq)){													### PASS
-				$indivslave[$j][17] = $alleles[0];															# might need those later for MI investigation
-				$indivslave[$j][18] = $alleles[1];
+				$indivslave[$j][0] = $alleles[0];															# might need those later for MI investigation
+				$indivslave[$j][1] = $alleles[1];
 
 				$indivmaster[$j][16]++;
 				if(($alleles[0] == 0) && ($alleles[1] == 0)){
@@ -1079,9 +1054,10 @@ print "thread $th_name query($line)\n";
 
 				$gt = "./.";
 			}
-			$lst[$j] =~ s/^\S{3}//;
+			$lst[$j] =~ s/^[^:]+//;
 			$lst[$j] = $gt . $lst[$j];
 			$flagged_line .= "\t" . $lst[$j];
+			$lst[$j] = 0;																				# maybe this saves some memory
 		} # for($j = 0; $j < @lst; $j++){
 		
 		$agt = $agt_m + $agt_f;
@@ -1446,10 +1422,10 @@ print "thread $th_name query($line)\n";
 					}
 					if(($fgt >= 0) && ($mgt >= 0)){
 						$indivmaster[$k][14]++;														# valid 2P MI-check
-						if((($indivslave[$k][17] == $indivslave[$fid][17]) || ($indivslave[$k][17] == $indivslave[$fid][18])) && (($indivslave[$k][18] == $indivslave[$mid][17]) || ($indivslave[$k][18] == $indivslave[$mid][18]))){
+						if((($indivslave[$k][0] == $indivslave[$fid][0]) || ($indivslave[$k][0] == $indivslave[$fid][1])) && (($indivslave[$k][1] == $indivslave[$mid][0]) || ($indivslave[$k][1] == $indivslave[$mid][1]))){
 							next;
 						}
-						if((($indivslave[$k][18] == $indivslave[$fid][17]) || ($indivslave[$k][18] == $indivslave[$fid][18])) && (($indivslave[$k][17] == $indivslave[$mid][17]) || ($indivslave[$k][17] == $indivslave[$mid][18]))){
+						if((($indivslave[$k][1] == $indivslave[$fid][0]) || ($indivslave[$k][1] == $indivslave[$fid][1])) && (($indivslave[$k][0] == $indivslave[$mid][0]) || ($indivslave[$k][0] == $indivslave[$mid][1]))){
 							next;
 						}							
 						$indivmaster[$k][12]++;
@@ -1457,14 +1433,14 @@ print "thread $th_name query($line)\n";
 					}
 					elsif($fgt >= 0){
 						$indivmaster[$k][13]++;														# valid 1P MI-check
-						if(($indivslave[$k][17] != $indivslave[$fid][17]) && ($indivslave[$k][17] != $indivslave[$fid][18]) && ($indivslave[$k][18] != $indivslave[$fid][17]) && ($indivslave[$k][18] != $indivslave[$fid][18])){
+						if(($indivslave[$k][0] != $indivslave[$fid][0]) && ($indivslave[$k][0] != $indivslave[$fid][1]) && ($indivslave[$k][1] != $indivslave[$fid][0]) && ($indivslave[$k][1] != $indivslave[$fid][1])){
 							$indivmaster[$k][11]++;							# 1P MI
 							$mi_cnt++;
 						}
 					}
 					elsif($mgt >= 0){
 						$indivmaster[$k][13]++;														# valid 1P MI-check
-						if(($indivslave[$k][17] != $indivslave[$mid][17]) && ($indivslave[$k][17] != $indivslave[$mid][18]) && ($indivslave[$k][18] != $indivslave[$mid][17]) && ($indivslave[$k][18] != $indivslave[$mid][18])){
+						if(($indivslave[$k][0] != $indivslave[$mid][0]) && ($indivslave[$k][0] != $indivslave[$mid][1]) && ($indivslave[$k][1] != $indivslave[$mid][0]) && ($indivslave[$k][1] != $indivslave[$mid][1])){
 						$indivmaster[$k][11]++;													# 1P MI
 							$mi_cnt++;
 						}						
@@ -1579,7 +1555,8 @@ print "thread $th_name query($line)\n";
 				print STDERR "\tthread= $th_name\tbp= $bp\tcnt= $line_cnt\n";
 			}
 		}
-	} # while(chomp($line = <$stream>))
+	} # while($line = $iter->next){
+	undef(@lst);
 	for($i = 0; $i < @qc_names; $i++){
 		$temp = $outstream[$i];
 		close($temp);
@@ -1802,6 +1779,8 @@ sub get_vcf_positions
 {
 	my($infile) = $_[0];
 	my($thread_cnt) = $_[1];
+	my($start_bp) = $_[2];
+	my($end_bp) = $_[3];
 	my($stream);
 	my($line, $bp);
 	my(%hash);
@@ -1824,7 +1803,8 @@ sub get_vcf_positions
 
 	$j = 0;
 
-	
+	$start_bp += 0;
+	$end_bp += 0;
 	if($infile =~ m/gz$/){
 		open($stream, "-|", "gzip -dc $infile") or die "Can not open infile $infile\n";
 		$usegz = 1;
@@ -1833,7 +1813,7 @@ sub get_vcf_positions
 		open($stream,"<$infile") or die "Can not open infile $infile\n";
 	}
 	
-	if($thread_cnt > 1){
+	if($thread_cnt > 1){													# not targeted, no endpojnts needed (ie. skip @endpoints)
 		while(chomp($line = <$stream>)){
 			if($line =~ m/^#/){
 				next;
@@ -1844,14 +1824,19 @@ sub get_vcf_positions
 			$line =~ m/\S+$/;
 			$bp = $&;
 			$bp += 0;
-			$bplst[$i] = $bp;
-			$i++;
+			if(($bp >= $start_bp) && ($bp <= $end_bp)){
+				$bplst[$i] = $bp;
+				$i++;
+			}
+			elsif($bp > $end_bp){
+				last;
+			}
 			if(0 == ($i % 20000)){
-				print "SNV cnt = $i\n";
+				print STDERR "SNV cnt = $i\n";
 			}
 		}	
 	}
-	else{
+	else{																	# this portion also provides the endpoints in case there are capture maps
 		while(chomp($line = <$stream>)){
 			if($line =~ m/^#/){
 				next;
@@ -2346,8 +2331,8 @@ sub get_data
 		}
 	}
 	if($found == 0){
-		print STDERR "Did not find usegz. Default= 0\n";
-		$hash{"usegz"} = 0;
+		print STDERR "Did not find usegz. Default= 1\n";
+		$hash{"usegz"} = 1;
 	}	
 	
 	seek(inf, 0, 0);
@@ -2652,6 +2637,7 @@ sub read_pedfile
 	my(@affstat);
 	my(@usehwe);																		# 0 or 1 if used for zHet & HWE calculations
 	my(@dummy);
+	my(%sample_hash);
 	my(%capture);																		# capture kit and map used
 	my(%race_gr_hash);																	# to numerically sort in the various RACEs like: DutchIsolate, Hispanic, etc.
 	my(%qc_gr_hash);																	# to numerically sort in the various QC_GROUPs like: ADNI, CC, FAM 
@@ -2665,6 +2651,7 @@ sub read_pedfile
 	my($qc_group_cnt);
 	my($size);																			# total IDs in ped/VCF
 	my($key, $value);
+	my($viable_samples) = 0;
 	my($pattern) = qr/-/;																# regex pattern
 	my($scratch) = $parameters{"scratch_dir"};											# scratch dir
 	
@@ -2698,14 +2685,26 @@ sub read_pedfile
 																						# the ever changing columns and column names of the .fam file made it necessary to have a function that permutes
 																						# the columns so that the code below can process it. If the input.fam changes this function (fix_infile) needs
 																						# to change as well.
-																					
+	for($i = 0; $i < @sampleids; $i++){
+		$sample_hash{$sampleids[$i]} = $i;
+	}
+	$size = $i;
 	open(inf,"<$temp") or die "Can not open pedfile $temp\n";
-	$i = 0;
+#	$i = 0;
 	$sample_cnt = 0;
 	$line = <inf>;																		# header line
 	while(chomp($line = <inf>)){
 		$line =~ s/^\s+//;
 		@lst = split(/\s+/, $line);
+		$i = $sample_hash{$lst[0]};
+		if($i eq ""){
+			print STDERR "$lst[0] from $infile not in $vcffile\n";
+		}
+		else{
+			$i += 0;
+			delete($sample_hash{$lst[0]});
+			$viable_samples++;
+		}
 		$race_groups[$i] = -1;
 		$qc_groups[$i] = -1;
 		if($lst[7] eq "0"){																# do not use this sample/column in VCF, skip over it
@@ -2782,11 +2781,19 @@ sub read_pedfile
 		$parent_index[$i][0] = $p1;
 		$parent_index[$i][1] = $p2;	
 		$keep[$i] = 1;
-		$i++;
+#		$i++;
 		$sample_cnt++;
 	}		
 	close(inf);
-	$size = $i;
+	$temp = 0;
+	print STDERR "There are $viable_samples viable damples in $infile\n";
+	while(($key, $value) = each(%sample_hash)){
+		print STDERR "$key from $vcffile not in $infile\n";
+		$temp++;
+	}
+	if($temp > 0){
+		die "Fix errors in $infile and try again.\n";
+	}
 	$i = 0;
 	while(($key, $value) = each(%race_gr_hash)){
 		$gr_lst[$i][0] = $key;
@@ -3452,137 +3459,12 @@ sub ln_fact
 
 ##################################
 
-sub find_start_bp
-{
-	my($stream, $start_bp, $file_size) = @_;
-	my($current) = tell($stream);
-	my($found) = 0;
-	my($start) = tell($stream);
-	my($min) = 0;
-	my($end) = $file_size;
-	my($previous, $line, $temp, $diff, $bp);
-	my($i) = 0;
-	seek($stream, 0, 0);
-	while($line = <$stream>){
-		if($line =~ m/^#/){
-			$previous = tell($stream);
-			next;
-		}
-		else{
-			$line =~ m/^\S+\s+\S+/;
-			$temp = $&;
-			$temp =~ m/\S+$/;
-			$bp = $&;		
-			seek($stream, $previous, 0);
-			$min = $previous;
-			$start = $min;
-			if($bp >= $start_bp){
-				$found = 1;
-			}
-			last;
-		}
-	}
-	while(($found == 0) && ($i < 18)){
-		chomp($line = <$stream>);
-		$previous = $current;
-		$current = tell($stream);
-#print STDERR "\nstart= $start current= $current end= $end\n";
-		$line =~ m/^\S+\s+\S+/;
-		$temp = $&;
-		$temp =~ m/\S+$/;
-		$bp = $&;
-#print STDERR "1st: bp= $bp looking for $start_bp current= $current i= $i\n";
-		if($bp == $start_bp){
-			seek($stream, $previous, 0);								# move back to previous position, done
-			$found = 1;
-			last;
-		}
-		if($bp > $start_bp){
-			$end = tell($stream);
-			$temp = int(($current - $start) / 2);
-			$temp *= -1;
-#print STDERR "seek(, $temp, 1)\n";
-			if(($current + $temp) < $min){
-				seek($stream, $min, 0);
-				$found = 1;
-				last;
-			}
-			seek($stream, $temp, 1);
-			$line = <$stream>;
-			
-		}
-		elsif($bp < $start_bp){
-			$start = $current;
-			$temp = int(($end - $current) / 2);
-#print STDERR "seek(, $temp, 1)\n";
-			seek($stream, $temp, 1);
-			$line = <$stream>;
-		}
-		$i++;
-	}
-	if($found == 0){
-		$previous = tell($stream);
-		chomp($line = <$stream>);
-		$current = tell($stream);
-		$line =~ m/^\S+\s+\S+/;
-		$temp = $&;
-		$temp =~ m/\S+$/;
-		$bp = $&;
-		$diff = $current - $previous;
-		while(($bp > $start_bp) && (!$found)){
-			$temp = -1 * $diff * 10;
-			$current = tell($stream);
-			if(($current + $temp) < $min){
-				seek($stream, $min, 0);
-				$found = 1;
-				last;
-			}
-			seek($stream, $temp, 1);
-			chomp($line = <$stream>);
-			$previous = tell($stream);
-			chomp($line = <$stream>);
-			$line =~ m/^\S+\s+\S+/;
-			$temp = $&;
-			$temp =~ m/\S+$/;
-			$bp = $&;	
-#print STDERR "2nd: bp= $bp looking for $start_bp\n";
-			if($bp == $start_bp){
-				seek($stream, $previous, 0);
-				$found = 1;
-				last;
-			}				
-		}
-	}
-	while($found == 0){
-		$previous = tell($stream);
-		chomp($line = <$stream>);
-		$line =~ m/^\S+\s+\S+/;
-		$temp = $&;
-		$temp =~ m/\S+$/;
-		$bp = $&;
-#print STDERR "3rd: bp= $bp looking for $start_bp\n";
-		if($bp >= $start_bp){
-			seek($stream, $previous, 0);
-			$found = 1;
-		}
-		else{
-			seek($stream, $min, 0);
-			$found = 1;
-			last;		
-		}
-	}
-#print STDERR "before return bp= $bp found= $found\n";
-	return($stream);
-}
-
-##################################
-
 sub cleanup
 {
 	my($ref) = $_[0];
 	my(%parameters) = %$ref;
 	my($pwd) = getcwd();
-	my($temp) = $temp = $scratch_dir . "occupied";
+	my($temp) = $scratch_dir . "occupied";
 	chdir($parameters{"scratch_dir"});
 	unlink("keep.txt");
 	unlink("sex.txt");
