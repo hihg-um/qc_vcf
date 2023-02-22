@@ -5,7 +5,7 @@ use 5.010;
 #use Statistics::R;
 
 if($#ARGV != 0){
-	print "QC-version 10/26/2022 1:46pm by Mike Schmidt, mschmidt\@med.miami.edu\n";
+	print "QC-version 01/25/2023 12:45pm by Mike Schmidt, mschmidt\@med.miami.edu\n";
 	die "args: <control file>\n";
 	
 }
@@ -731,8 +731,7 @@ sub read_vcf
 			}
 			
 			$called++;
-			@indiv = split(/:/, $lst[$j]);
-			
+			@indiv = split(/:/, $lst[$j]);			
 			$gt = $indiv[$indexgt];
 			$dp = $indiv[$indexdp];
 			$ad = $indiv[$indexad];
@@ -884,7 +883,7 @@ sub read_vcf
 
 				$gt = "./.";
 			}
-			$lst[$j] =~ s/^\S{3}//;
+			$lst[$j] =~ s/^[^:]+//;
 			$lst[$j] = $gt . $lst[$j];
 			$flagged_line .= "\t" . $lst[$j];
 		} # for($j = 0; $j < @lst; $j++){
@@ -969,25 +968,28 @@ sub read_vcf
 		# AN = total allele count
 		$overall_ac =~ s/,$//;																			# delete trailing ,
 		$overall_maf =~ s/,$//;
-		$info =~ m/AF=/;																				# break string to inset newly calculated AF & AC strings
-		$prematch = $` . "AF=";
-		$postmatch = $';
-		$postmatch =~ m/;/;
-		$postmatch = $';
-		$info = $prematch . $overall_maf . ";" . $postmatch;											# patch the whole mess back together
-		$info =~ m/AC=/;																				# ditto for AC
-		$prematch = $` . "AC=";
-		$postmatch = $';
-		$postmatch =~ m/;/;
-		$postmatch = $';
-		$info = $prematch . $overall_ac . ";" . $postmatch;
-		$info =~ m/AN=/;																				# ditto for AC
-		$prematch = $` . "AN=";
-		$postmatch = $';
-		$postmatch =~ m/;/;
-		$postmatch = $';
-		$info = $prematch . $an . ";" . $postmatch;
-		
+		if($info =~ m/AF=/){																				# break string to inset newly calculated AF & AC strings
+			$prematch = $` . "AF=";
+			$postmatch = $';
+			$postmatch =~ m/;/;
+			$postmatch = $';
+			$info = $prematch . $overall_maf . ";" . $postmatch;											# patch the whole mess back together
+		}
+		if($info =~ m/AC=/){																				# ditto for AC
+			$prematch = $` . "AC=";
+			$postmatch = $';
+			$postmatch =~ m/;/;
+			$postmatch = $';
+			$info = $prematch . $overall_ac . ";" . $postmatch;
+		}
+		if($info =~ m/AN=/){																				# ditto for AC
+			$prematch = $` . "AN=";
+			$postmatch = $';
+			$postmatch =~ m/;/;
+			$postmatch = $';
+			$info = $prematch . $an . ";" . $postmatch;
+		}
+
 		### end QC-group MAF
 		$ontarget_cnt = 0;
 		for($i = 0; $i < $qc_grp_cnt; $i++){															# step through all QC-groups for VFLAG purposes
@@ -1160,14 +1162,14 @@ sub read_vcf
 			}
 			$abh_str =~ s/,$//;
 			$str_abh[$i] =~ s/,$//;
-			$info = $abh_str . ";" . $info;			
+			$info = $abh_str . ";" . $info;				
 		}
 		for($i = 0; $i < @qc_names; $i++){
-			$temp = "VFLAGS_" . $qc_names[$i] . "=" . $vflag[$i] . ";";
+			$temp = "VFLAG_" . $qc_names[$i] . "=" . $vflag[$i] . ";";
 			$info = $temp . $info;
 		}
-
 		$info =~ s/\s+$//;
+
 =begin
 		$info .= ";VariantInTargetFraction=" . "$ontarget_cnt" . "/" . "$sample_cnt";
 		$temp = -1;
@@ -2096,9 +2098,9 @@ sub get_data
 			$line =~ s/^\S+\s+//;
 			$line =~ s/^\S+//;
 			$temp = $&;
-			if((($temp =~ m/^\//) || ($temp =~ m/^\./)) && ($temp !~ m/\/$/)){
-				$temp .= "/";
-			}
+#			if((($temp =~ m/^\//) || ($temp =~ m/^\./)) && ($temp !~ m/\/$/)){
+#				$temp .= "/";
+#			}
 			$hash{"output_prefix"} = $temp;
 			$found = 1;
 			last;

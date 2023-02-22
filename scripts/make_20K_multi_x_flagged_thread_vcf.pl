@@ -8,7 +8,7 @@ use Cwd;
 
 #use Statistics::R;
 
-my($version) = "QC-version 12/13/2022 11:03am by Mike Schmidt, mschmidt\@med.miami.edu\n";
+my($version) = "QC-version 01/26/2023 1:49pm by Mike Schmidt, mschmidt\@med.miami.edu\n";
 if($#ARGV != 0){
 	print "$version";
 	die "args: <control file>\n";
@@ -61,9 +61,9 @@ display_parameters(\%parameters);																# print to stdout what was ente
 my($scratch_dir) = $parameters{scratch_dir};
 $temp = $scratch_dir . "occupied";
 $temp = mkdir($temp, 0777);
-if($temp == 0){
-	die "Failed to exclusively secure $scratch_dir\n";
-}
+#if($temp == 0){
+#	die "Failed to exclusively secure $scratch_dir\n";
+#}
 $vcf =  $parameters{"vcf"};																		# the raw VCF data file
 my($id_file) = $parameters{"id_file"};															# the .fam file. It is expected to have the same IDs in the exact same order as the VCF
 
@@ -145,8 +145,15 @@ for($i = 0; $i < @race_names; $i++){
 my($increment) = 0;
 my($top_pos) = 0;
 my($previous_pos) = -1;
+
+$temp = $#bp_lst;
+print "size bp_lst = $temp\n";
 if($thread_cnt > 1){
-	$increment = int($#bp_lst / $thread_cnt);
+	$increment = int(($#bp_lst + 1) / $thread_cnt);
+	if((0 == ($increment % 2)) && ($increment > 2)){
+		$increment--;
+	}
+print "increment= $increment\n";
 	for($i = 0; $i < $thread_cnt; $i++){
 		$previous_pos++;
 		if($i == ($thread_cnt-1)){
@@ -157,7 +164,7 @@ if($thread_cnt > 1){
 		}
 		$parameters{"start_bp"} = $bp_lst[$previous_pos];
 		$parameters{"end_bp"} = $bp_lst[$top_pos];
-print "$i:\tstart=$bp_lst[$previous_pos]\tend=$bp_lst[$top_pos];\n";
+print "$i:\tstart[$previous_pos]=$bp_lst[$previous_pos]\tend[$top_pos]=$bp_lst[$top_pos];\n";
 		$previous_pos = $top_pos;
 		$threads[$i] = threads->create(\&read_vcf, $vcf, \%parameters, \@keep, \@sample_ids, \@sex, \@race_groups, \@qc_groups, \@par_index, \%index, \@race_names, \@qc_names, $ref1, $race_grp_cnt, $qc_grp_cnt, \@aff_stat, \@usehwe, \%capture_lookup, \@qc_group_map, $target_size, $shortest_seg, \@male_thresholds, @real_sex, $i);
 	}
@@ -220,8 +227,8 @@ print "cat $cat_string_vcf > $outname\n";
 	for($i = 0; $i < $j; $i++){
 		$outname = $outnames[$i];
 		$outname =~ s/thread_0//;
-print "cat $cat_string_snv[$i] > $outname\n";
-		`cat $cat_string_snv[$i] > $outname`;
+print "cat $cat_string_snv[$i] >> $outname\n";
+		`cat $cat_string_snv[$i] >> $outname`;
 		@lst = split(/\s+/, $cat_string_snv[$i]);
 		foreach $temp (@lst){
 print "deleting $temp\n";
@@ -661,11 +668,11 @@ sub read_vcf
 
 	if($th_name == 0){
 		if($infile =~ m/gz$/){															# open .gz or uncompressed text file.vcf
-			open($stream, "-|", "gzip -dc $infile") or die "Can not open infile 657 $infile\n";
+			open($stream, "-|", "gzip -dc $infile") or die "Can not open infile $infile\n";
 			$usegz = 1;
 		}
 		else{
-			open($stream,"<$infile") or die "Can not open infile 661 $infile\n";
+			open($stream,"<$infile") or die "Can not open infile $infile\n";
 		}
 		while(chomp($line = <$stream>)){
 			if($line =~ m/^#/){
@@ -1140,24 +1147,27 @@ print "thread $th_name query($line)\n";
 		# AN = total allele count		
 		$overall_ac =~ s/,$//;																			# delete trailing ,
 		$overall_maf =~ s/,$//;
-		$info =~ m/AF=/;																				# break string to inset newly calculated AF & AC strings
-		$prematch = $` . "AF=";
-		$postmatch = $';
-		$postmatch =~ m/;/;
-		$postmatch = $';
-		$info = $prematch . $overall_maf . ";" . $postmatch;											# patch the whole mess back together
-		$info =~ m/AC=/;																				# ditto for AC
-		$prematch = $` . "AC=";
-		$postmatch = $';
-		$postmatch =~ m/;/;
-		$postmatch = $';
-		$info = $prematch . $overall_ac . ";" . $postmatch;
-		$info =~ m/AN=/;																				# ditto for AC
-		$prematch = $` . "AN=";
-		$postmatch = $';
-		$postmatch =~ m/;/;
-		$postmatch = $';
-		$info = $prematch . $an . ";" . $postmatch;
+		if($info =~ m/AF=/){																				# break string to inset newly calculated AF & AC strings
+			$prematch = $` . "AF=";
+			$postmatch = $';
+			$postmatch =~ m/;/;
+			$postmatch = $';
+			$info = $prematch . $overall_maf . ";" . $postmatch;											# patch the whole mess back together
+		}
+		if($info =~ m/AC=/){																				# ditto for AC
+			$prematch = $` . "AC=";
+			$postmatch = $';
+			$postmatch =~ m/;/;
+			$postmatch = $';
+			$info = $prematch . $overall_ac . ";" . $postmatch;
+		}
+		if($info =~ m/AN=/){																				# ditto for AC
+			$prematch = $` . "AN=";
+			$postmatch = $';
+			$postmatch =~ m/;/;
+			$postmatch = $';
+			$info = $prematch . $an . ";" . $postmatch;
+		}		
 		
 		### end QC-group MAF
 		$ontarget_cnt = 0;
@@ -1334,7 +1344,7 @@ print "thread $th_name query($line)\n";
 			$info = $abh_str . ";" . $info;			
 		}
 		for($i = 0; $i < @qc_names; $i++){
-			$temp = "VFLAGS_" . $qc_names[$i] . "=" . $vflag[$i] . ";";
+			$temp = "VFLAG_" . $qc_names[$i] . "=" . $vflag[$i] . ";";
 			$info = $temp . $info;
 		}
 
@@ -1798,9 +1808,11 @@ sub get_vcf_positions
 	my($increment) = 0;
 	my($next_target) = 0;
 	my($estimated_vars) = 0;
-	my($i) = 0;
-	my($j);
-
+	my($i) = 1;
+	my($j) = 0;
+	my($previous) = -1;
+	my($increment) = 100;
+	
 	$j = 0;
 
 	$start_bp += 0;
@@ -1825,18 +1837,36 @@ sub get_vcf_positions
 			$bp = $&;
 			$bp += 0;
 			if(($bp >= $start_bp) && ($bp <= $end_bp)){
-				$bplst[$i] = $bp;
+#print "$i\t$bp";
+				if((0 == ($i % $increment)) || (1 == ($i % $increment))){
+#print "\tbplst[$j] = $bp";
+					$bplst[$j] = $bp;
+					$j++;
+				}
+#print "\n";
+				$previous = $bp;
 				$i++;
 			}
 			elsif($bp > $end_bp){
+				if(1 != ($i % $increment)){
+					$bplst[$j] = $previous;
+					$j++;
+				}
 				last;
 			}
 			if(0 == ($i % 20000)){
 				print STDERR "SNV cnt = $i\n";
 			}
-		}	
+		}
+		if($bp <= $end_bp){
+			if(1 != ($i % $increment)){
+				$bplst[$j] = $previous;
+				$j++;
+			}		
+		}
 	}
-	else{																	# this portion also provides the endpoints in case there are capture maps
+	else{		# this portion also provides the endpoints in case there are capture maps
+		$i = 0;
 		while(chomp($line = <$stream>)){
 			if($line =~ m/^#/){
 				next;
@@ -1857,6 +1887,7 @@ sub get_vcf_positions
 		}	
 	}
 	close($stream);
+
 	print STDERR "total position = $i\n";
 	return(\%hash, \@bplst, \@endpoints, $i);
 }
