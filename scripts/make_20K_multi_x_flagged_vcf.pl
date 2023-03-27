@@ -3,9 +3,9 @@
 use strict;
 use 5.010;
 #use Statistics::R;
-
+my($version) = "QC-version 03/10/2023 7:55am by Mike Schmidt, mschmidt\@med.miami.edu";
 if($#ARGV != 0){
-	print "QC-version 01/25/2023 12:45pm by Mike Schmidt, mschmidt\@med.miami.edu\n";
+	print "$version\n";
 	die "args: <control file>\n";
 	
 }
@@ -23,7 +23,7 @@ VFLAGS
 =cut
 
 my($ctrlfile, $temp, $names, $vcf, $shortest_seg);
-my($ref1, $ref2, $ref3, $ref4, $ref5, $ref6, $ref7, $ref8, $ref9, $ref10, $ref11, $ref12, $ref13, $ref14, $ref15, $ref16);				# references returned from functions
+my($ref1, $ref2, $ref3, $ref4, $ref5, $ref6, $ref7, $ref8, $ref9, $ref10, $ref11, $ref12, $ref13, $ref14, $ref15, $ref16, $ref17);				# references returned from functions
 my($qc_grp_cnt, $race_grp_cnt);																	# number of QC/RACE-groups
 my(@vcfs);																						# holds VCF input file name(s)
 my(@race_groups);																				# groups listed in column RACE of the .fam file (DutchIsolate, Hispanic, Caucasian, ...)
@@ -51,6 +51,7 @@ $ref1 = get_data($ctrlfile);																	# read the control file and fill in
 #my($debug_info) = "dbg_" . $parameters{"vcf"};
 #our($dbg_handle);
 #open($dbg_handle,">$debug_info");
+$parameters{"version"} = $version;
 display_parameters(\%parameters);																# print to stdout what was entered or used as default
 $vcf =  $parameters{"vcf"};																		# the raw VCF data file
 my($id_file) = $parameters{"id_file"};															# the .fam file. It is expected to have the same IDs in the exact same order as the VCF
@@ -58,7 +59,7 @@ my($id_file) = $parameters{"id_file"};															# the .fam file. It is expe
 
 print stderr "reading $id_file\n";
 
-($ref1, $ref2, $ref3, $ref4, $ref5, $ref6, $ref7, $ref8, $ref9, $ref10, $ref11, $ref12, $race_grp_cnt, $qc_grp_cnt, $ref13, $ref14, $ref15, $ref16) = read_pedfile($id_file, $vcf, \%parameters); 
+($ref1, $ref2, $ref3, $ref4, $ref5, $ref6, $ref7, $ref8, $ref9, $ref10, $ref11, $ref12, $race_grp_cnt, $qc_grp_cnt, $ref13, $ref14, $ref15, $ref16, $ref17) = read_pedfile($id_file, $vcf, \%parameters); 
 																								# see function body for details
 @sex = @$ref1;
 @par_index = @$ref2;
@@ -73,9 +74,10 @@ print stderr "reading $id_file\n";
 @qc_names = @$ref11;
 @aff_stat = @$ref12;
 @usehwe = @$ref13;
+my(@has_parent) = @$ref17;
 %capture = %$ref14;
 my(@male_thresholds) = @$ref15;
-@real_sex = $ref16;
+@real_sex = @$ref16;
 my($key, $value);
 my($target_size, $chr, $bp_cnt);
 my(%bp_hash);
@@ -122,7 +124,8 @@ for($i = 0; $i < @race_names; $i++){
 }
 
 print stderr "reading $vcf final pass\n";
-read_vcf($vcf, \%parameters, \@keep, \@sample_ids, \@sex, \@race_groups, \@qc_groups, \@par_index, \%index, \@race_names, \@qc_names, $ref1, $race_grp_cnt, $qc_grp_cnt, \@aff_stat, \@usehwe, \%capture_lookup, \@qc_group_map, $target_size, $shortest_seg, \@male_thresholds, @real_sex);
+
+read_vcf($vcf, \%parameters, \@keep, \@sample_ids, \@sex, \@race_groups, \@qc_groups, \@par_index, \%index, \@race_names, \@qc_names, $ref1, $race_grp_cnt, $qc_grp_cnt, \@aff_stat, \@usehwe, \%capture_lookup, \@qc_group_map, $target_size, $shortest_seg, \@male_thresholds, \@real_sex, \@has_parent);
 #close($dbg_handle);
 
 
@@ -152,6 +155,7 @@ sub read_vcf
 	my($shortest_seg) = $_[19];
 	my($ref16) = $_[20];
 	my($ref17) = $_[21];
+	my($ref18) = $_[22];
 	my(@male_thresholds) = @$ref16;													# the MAX # of male hets has to be LESS-Equal than this number
 	my($key, $val);
 	my(%parameters) = %$ref1;														# program global parameters
@@ -170,6 +174,7 @@ sub read_vcf
 	my(%capture_lookup) = %$ref14;													# xor together over the various target maps, 2^0 + 2^1 + ... + 2^(N-1)
 	my(@qc_group_map) = @$ref15;													# holds the 2^i value for the qc_group used in the capture_lookup
 	my(@real_sex) = @$ref17;														# unmodified
+	my(@has_parents) = @$ref18;														# 0 = has no parents, 1 = has 1+ parents
 	my(@genotypes);																	# PASSed genotypes for current SNV the genotype on a per sample basis. -1= missing; -10= failed; 0 = ref.ref; 1= ref,alt; 2 = alt,alt
 	my(@race_gt_cnt_m, @race_gt_cnt_f);												# genotype counts on per RACE basis [0]= pass_RR, [1]= pass_RA, [2]= pass_AA, [3]= fail_RR, [4]= fail_RA, [5]= fail_AA, [6]= missing
 	my(@race_gt_cnt_con_m, @race_gt_cnt_con_f);										# as above but only counts controls/unaff
@@ -308,6 +313,7 @@ sub read_vcf
 	my($missing_gt_index);															# index where to store missing GT counts
 	my($mi_cnt);																	# count of SNVs MIs
 	my($total_mi, $prop_mi);														# total MI-pairs, prop_mi = mi_cnt / total_mi
+	my($het, $hom1, $hom2);															# for Zhet calculation
 	my($het_obs, $het_exp, $incr);													# needed for zHet calculation
 	my($rsid, $fout, $hidp);														# for SNV-summary file, rsID, flitered-out, high-depth
 	my($gtf, $mono, $crate, $cb, $gpass, $itr, $miss);								# various silly stats for the SNV-summary file
@@ -335,7 +341,6 @@ sub read_vcf
 	}
 =cut
 	my(@ps_auto);																	# 2 pseudo-autosomal regions to be excluded
-
 	if($infile =~ m/gz$/){															# open .gz or uncompressed text file.vcf
 		open($stream, "-|", "gzip -dc $infile") or die "Can not open infile $infile\n";
 		$usegz = 1;
@@ -404,12 +409,12 @@ sub read_vcf
 	@lst = split(/\//, $infile);
 	$info = $lst[$#lst];
 	for($i = 0; $i < @qc_names; $i++){												# setup various headers needed for summary files
-		if($isx){
-			$headers[$i] = "CHR\tPOS\tPASS\tFAIL\tMissing\tGT_Failed\tClean\tMono\tCallRate\tCallBad\tGATKPass\tMAF\tMeanDepth\tHiDepth\tABHet\tMend_Incon\tMend_pairs\tpropMI\tMultiAllele\tFilteredOut\tVFLAGS\trsID\tRefAllele\tAltAllele\tQUAL\tFILTER\tVTYPE\tInTargetRegion\tMaleHet";
-		}
-		else{
+#		if($isx){
+#			$headers[$i] = "CHR\tPOS\tPASS\tFAIL\tMissing\tGT_Failed\tClean\tMono\tCallRate\tCallBad\tGATKPass\tMAF\tMeanDepth\tHiDepth\tABHet\tMend_Incon\tMend_pairs\tpropMI\tMultiAllele\tFilteredOut\tVFLAGS\trsID\tRefAllele\tAltAllele\tQUAL\tFILTER\tVTYPE\tInTargetRegion\tMaleHet";
+#		}
+#		else{
 			$headers[$i] = "CHR\tPOS\tPASS\tFAIL\tMissing\tGT_Failed\tClean\tMono\tCallRate\tCallBad\tGATKPass\tMAF\tMeanDepth\tHiDepth\tABHet\tMend_Incon\tMend_pairs\tpropMI\tMultiAllele\tFilteredOut\tVFLAGS\trsID\tRefAllele\tAltAllele\tQUAL\tFILTER\tVTYPE\tInTargetRegion";		
-		}
+#		}
 		for($j = 0; $j < @race_names; $j++){
 			if($qc_group_cnt[$i][$j] >= $minstat){
 				$headers[$i] .= "\t" . "nClean_" . $race_names[$j];
@@ -496,23 +501,9 @@ sub read_vcf
 					$indivmaster[$j][21] = 0;											# pre-QC 0/alt set ./.
 					$indivmaster[$j][22] = 0;											# pre-QC alt/alt set ./.
 
-					$indivslave[$j][0] = $sample_ids[$j];								# name
-					$indivslave[$j][1] = 0;												# missing genotypes
-					$indivslave[$j][2] = 0;												# singleton
-					$indivslave[$j][3] = 0;												# private doubleton
-					$indivslave[$j][4] = 0;												# doubleton
-					$indivslave[$j][5] = 0;												# Ti
-					$indivslave[$j][6] = 0;												# Tv
-					$indivslave[$j][7] = 0;												# het. genotypes
-					$indivslave[$j][8] = 0;												# hom. genotypes
-					$indivslave[$j][9] = 0;												# sum depth of "PASS" genotypes
-					$indivslave[$j][10] = 0;											# parent count
-					$indivslave[$j][11] = 0;											# 1P MI count
-					$indivslave[$j][12] = 0;											# 2P MI count
-					$indivslave[$j][13] = 0;											# valid 1P counts
-					$indivslave[$j][14] = 0;											# valid 2P counts
-					$indivslave[$j][15] = 0;											# indel count
-					$indivslave[$j][16] = "";											# genotype	
+					$indivslave[$j][0] = -1;											# allele 1
+					$indivslave[$j][1] = -1;											# allele 2
+
 					
 					$indivmastersize++;
 					if($keep[$j]){
@@ -537,17 +528,13 @@ sub read_vcf
 			}
 			next;
 		} # if($line =~ m/^#/)
-		if(($start_bp > 0) && ($usegz == 0)){
-			$stream = find_start_bp($stream, $start_bp, $file_size, $usegz);
-			$start_bp = 0;
-		}
-		elsif(($start_bp > 0) && ($usegz == 1)){
+
+		if($start_bp > 0){
 			$line =~ m/^\S+\s+\S+/;
 			$temp = $&;
 			$temp =~ m/\S+$/;
 			$bp = $&;
 			$cnt++;
-	
 			if($start_bp > $bp){
 				next;
 			}
@@ -563,7 +550,6 @@ sub read_vcf
 		$head = $&;
 		@lst = split(/\s+/, $head);
 		$chr = $lst[0];
-
 		$bp = $lst[1];
 		$rsid = $lst[2];
 		$ref = $lst[3];
@@ -676,24 +662,8 @@ sub read_vcf
 			}
 		} #for($i = 0; $i < $qc_grp_cnt; $i++)
 		for($i = 0; $i < @sample_ids; $i++){
-			$indivslave[$i][1] = 0;																		# missing genotypes
-			$indivslave[$i][2] = 0;																		# singleton
-			$indivslave[$i][3] = 0;																		# private doubleton
-			$indivslave[$i][4] = 0;																		# doubleton
-			$indivslave[$i][5] = 0;																		# Ti
-			$indivslave[$i][6] = 0;																		# Tv
-			$indivslave[$i][7] = 0;																		# het. genotypes
-			$indivslave[$i][8] = 0;																		# hom. genotypes
-			$indivslave[$i][9] = 0;																		# sum depth of "PASS" genotypes
-			$indivslave[$i][10] = 0;																	# depth SNV count
-			$indivslave[$i][11] = 0;																	# 1P MI count
-			$indivslave[$i][12] = 0;																	# 2P MI count
-			$indivslave[$i][13] = 0;																	# valid 1P counts
-			$indivslave[$i][14] = 0;																	# valid 2P counts
-			$indivslave[$i][15] = 0;																	# indel count
-			$indivslave[$i][16] = -999;																	# genotype	
-			$indivslave[$i][17] = -1;																	# allele 1
-			$indivslave[$i][18] = -1;																	# allele 2
+			$indivslave[$i][0] = -1;																	# allele 1
+			$indivslave[$i][1] = -1;																	# allele 2
 		}
 
 		$agt = 0;																						# Alternative GenoTypes, everything valid that is not 0/0
@@ -747,6 +717,11 @@ sub read_vcf
 			@alleles = split(/\/|\|/, $gt);																# split the standard 0/1 or phased 0|1 into 0 and 1 (or whatever alleles you have)
 			$alleles[0] += 0;
 			$alleles[1] += 0;
+			if($alleles[1] < $alleles[0]){
+				$temp = $alleles[0];
+				$alleles[0] = $alleles[1];
+				$alleles[1] = $temp;
+			}
 			if($sex[$j] == 0){
 				$mindp = $mindp_male;
 			}
@@ -780,8 +755,8 @@ sub read_vcf
 				$gt = "./.";
 			}
 			elsif(($dp >= $mindp) && ($gq >= $mingq)){													### PASS
-				$indivslave[$j][17] = $alleles[0];															# might need those later for MI investigation
-				$indivslave[$j][18] = $alleles[1];
+				$indivslave[$j][0] = $alleles[0];															# might need those later for MI investigation
+				$indivslave[$j][1] = $alleles[1];
 
 				$indivmaster[$j][16]++;
 				if(($alleles[0] == 0) && ($alleles[1] == 0)){
@@ -1025,9 +1000,9 @@ sub read_vcf
 					for($m = $allele_cnt; $m < $max_gt_cnt; $m++){
 						$hom2 += $race_gt_cnt_con_f[$i][$k][$m];
 					}
-					if($isx && $use_phwex){
-						$m_ref = $race_gt_cnt_con_m[$i][$k][0];											# male REF genotype on chrX
-						$m_alt = 0;
+#					if($isx && $use_phwex){
+#						$m_ref = $race_gt_cnt_con_m[$i][$k][0];											# male REF genotype on chrX
+#						$m_alt = 0;
 =begin
 						for($m = $allele_cnt, $n = $allele_cnt-1; $m < $max_gt_cnt; $m += $n, $n--){
 							$m_alt += $race_gt_cnt_con_m[$i][$k][$m];
@@ -1051,8 +1026,8 @@ sub read_vcf
 							$snphwe[$i][$k] = -1;
 						}
 =cut
-					}
-					else{
+#					}
+#					else{
 						$temp = $het + $hom1 + $hom2;
 						if($temp >= $minstat){
 							$snphwe[$i][$k] = snphwe($het, $hom1, $hom2);									# calculate pHWE
@@ -1060,7 +1035,7 @@ sub read_vcf
 						else{
 							$snphwe[$i][$k] = -1;
 						}
-					}
+#					}
 					$het_exp = 1;
 					$total = 0;
 					for($m = 0; $m < $max_gt_cnt; $m++){
@@ -1090,26 +1065,6 @@ sub read_vcf
 							$het_exp -= $rmaf[$m] * $rmaf[$m];											# hets expected based on MAFs of all alleles
 						}
 					}
-					$hetz[$i][$k] = 888888;																# init with something, should get overwritten
-					if($total == $het_obs){
-						$hetz[$i][$k] = 999999;															# the "all het" case
-					}
-					elsif($het_obs == 0){																# the "no het" and all missing case
-						$hetz[$i][$k] = -999999;
-					}
-					elsif($total > 0){																	# the interesting case
-						$het_obs /= $total;
-						$temp = $het_exp - $het_obs;
-						$hetz[$i][$k] = $total * $temp * $temp / ($het_obs * (1 - $het_obs));
-						$hetz[$i][$k] = sqrt($hetz[$i][$k]);
-						if($het_exp > $het_obs){
-							$hetz[$i][$k] *= -1;
-						}
-					}
-				
-					$str_hetz[$i] .= sprintf("%7.5f,\t", $hetz[$i][$k]);								# add to output string
-					$str_hwe[$i] .= sprintf("%g,\t", $snphwe[$i][$k]);
-
 
 					if($isx){
 						$str_clean[$i] .= sprintf("%i,",$race_gt_cnt_m[$i][$k][0]);
@@ -1117,9 +1072,22 @@ sub read_vcf
 							$str_clean[$i] .= sprintf("%i,",$race_gt_cnt_m[$i][$k][$m]);
 						}					
 					}
+					$hom2 = 0;
+					$het = 0;
 					for($m = 0; $m < $max_gt_cnt; $m++){
 						$str_clean[$i] .= sprintf("%i,", $race_gt_cnt_f[$i][$k][$m]);
+						if(($m > 0) && ($m < $allele_cnt)){
+							$het += $race_gt_cnt_f[$i][$k][$m];
+						}elsif($m > 0){
+							$hom2 += $race_gt_cnt_f[$i][$k][$m];
+						}
 					}
+					$hom1 = $race_gt_cnt_f[$i][$k][0];
+					
+					$hetz[$i][$k] = excess_het_gt_only( $hom1, $het, $hom2);
+#print "$hetz[$i][$k] = excess_het_gt_only( $hom1, $het, $hom2)\n";
+					$str_hetz[$i] .= sprintf("%7.5f,\t", $hetz[$i][$k]);								# add to output string
+					$str_hwe[$i] .= sprintf("%g,\t", $snphwe[$i][$k]);
 					$str_clean[$i] =~ s/,$//;
 					$str_clean[$i] .= ";";
 					if($isx){
@@ -1131,7 +1099,7 @@ sub read_vcf
 					for($m = 0; $m < $max_gt_cnt; $m++){
 						$str_clean[$i] .= sprintf("%i,", $race_gt_cnt_con_f[$i][$k][$m]);
 					}
-					$str_clean[$i] =~ s/,$//;					
+					$str_clean[$i] =~ s/,$//;				
 				}
 				$str_clean[$i] .= "\t";
 			}
@@ -1233,7 +1201,10 @@ sub read_vcf
 			$mi_cnt = 0;
 			$total_mi = 0; 
 			$prop_mi = -1;
-			for($k = 0; $k < @genotypes; $k++){														# mend. incons. and transfer of tempdata to permanent data				
+			for($k = 0; $k < @genotypes; $k++){														# mend. incons. and transfer of tempdata to permanent data		
+				if($has_parents[$k] == 0){															# no parents, next
+					next;
+				}
 				if(($genotypes[$k] >= 0) && $keep[$k]){							
 					$fid = $par_index[$k][0];														# father index
 					$mid = $par_index[$k][1];														# mother index
@@ -1253,10 +1224,10 @@ sub read_vcf
 					}
 					if(($fgt >= 0) && ($mgt >= 0)){
 						$indivmaster[$k][14]++;														# valid 2P MI-check
-						if((($indivslave[$k][17] == $indivslave[$fid][17]) || ($indivslave[$k][17] == $indivslave[$fid][18])) && (($indivslave[$k][18] == $indivslave[$mid][17]) || ($indivslave[$k][18] == $indivslave[$mid][18]))){
+						if((($indivslave[$k][0] == $indivslave[$fid][0]) || ($indivslave[$k][0] == $indivslave[$fid][1])) && (($indivslave[$k][1] == $indivslave[$mid][0]) || ($indivslave[$k][1] == $indivslave[$mid][1]))){
 							next;
 						}
-						if((($indivslave[$k][18] == $indivslave[$fid][17]) || ($indivslave[$k][18] == $indivslave[$fid][18])) && (($indivslave[$k][17] == $indivslave[$mid][17]) || ($indivslave[$k][17] == $indivslave[$mid][18]))){
+						if((($indivslave[$k][1] == $indivslave[$fid][0]) || ($indivslave[$k][1] == $indivslave[$fid][1])) && (($indivslave[$k][0] == $indivslave[$mid][0]) || ($indivslave[$k][0] == $indivslave[$mid][1]))){
 							next;
 						}							
 						$indivmaster[$k][12]++;
@@ -1264,14 +1235,14 @@ sub read_vcf
 					}
 					elsif($fgt >= 0){
 						$indivmaster[$k][13]++;														# valid 1P MI-check
-						if(($indivslave[$k][17] != $indivslave[$fid][17]) && ($indivslave[$k][17] != $indivslave[$fid][18]) && ($indivslave[$k][18] != $indivslave[$fid][17]) && ($indivslave[$k][18] != $indivslave[$fid][18])){
+						if(($indivslave[$k][0] != $indivslave[$fid][0]) && ($indivslave[$k][0] != $indivslave[$fid][1]) && ($indivslave[$k][1] != $indivslave[$fid][0]) && ($indivslave[$k][1] != $indivslave[$fid][1])){
 							$indivmaster[$k][11]++;							# 1P MI
 							$mi_cnt++;
 						}
 					}
 					elsif($mgt >= 0){
 						$indivmaster[$k][13]++;														# valid 1P MI-check
-						if(($indivslave[$k][17] != $indivslave[$mid][17]) && ($indivslave[$k][17] != $indivslave[$mid][18]) && ($indivslave[$k][18] != $indivslave[$mid][17]) && ($indivslave[$k][18] != $indivslave[$mid][18])){
+						if(($indivslave[$k][0] != $indivslave[$mid][0]) && ($indivslave[$k][0] != $indivslave[$mid][1]) && ($indivslave[$k][1] != $indivslave[$mid][0]) && ($indivslave[$k][1] != $indivslave[$mid][1])){
 							$indivmaster[$k][11]++;													# 1P MI
 							$mi_cnt++;
 						}						
@@ -1282,8 +1253,75 @@ sub read_vcf
 				$prop_mi = $mi_cnt / $total_mi;
 			}
 		}
-		else{
-			$mi_cnt = ".";
+		else{																						# chrX
+			$mi_cnt = 0;
+			$total_mi = 0; 
+			$prop_mi = -1;
+			for($k = 0; $k < @genotypes; $k++){														# mend. incons. and transfer of tempdata to permanent data	
+				if($has_parents[$k] == 0){															# no parents, next
+					next;
+				}
+				if(($genotypes[$k] >= 0) && $keep[$k]){							
+					$fid = $par_index[$k][0];														# father index
+					$mid = $par_index[$k][1];														# mother index
+					$fgt = -1;
+					$mgt = -1;
+					if($fid >= 0){
+						$fgt = $genotypes[$fid];
+						if(($fgt >= 0) && ($sex[$k] == 1)){											# on chrX father-son pairs are useless
+							$total_mi++;
+						}
+					}
+					if($mid >= 0){
+						$mgt = $genotypes[$mid];
+						if($mgt >= 0){
+							$total_mi++;
+						}
+					}
+					if($sex[$k] == 1){																# for female offspring
+						if(($fgt >= 0) && ($mgt >= 0)){
+							$indivmaster[$k][14]++;														# valid 2P MI-check
+							if((($indivslave[$k][0] == $indivslave[$fid][0]) || ($indivslave[$k][0] == $indivslave[$fid][1])) && (($indivslave[$k][1] == $indivslave[$mid][0]) || ($indivslave[$k][1] == $indivslave[$mid][1]))){
+								next;
+							}
+							if((($indivslave[$k][1] == $indivslave[$fid][0]) || ($indivslave[$k][1] == $indivslave[$fid][1])) && (($indivslave[$k][0] == $indivslave[$mid][0]) || ($indivslave[$k][0] == $indivslave[$mid][1]))){
+								next;
+							}							
+							$indivmaster[$k][12]++;
+							$mi_cnt++;
+						}
+						elsif($fgt >= 0){
+							$indivmaster[$k][13]++;														# valid 1P MI-check
+							if(($indivslave[$k][0] != $indivslave[$fid][0]) && ($indivslave[$k][0] != $indivslave[$fid][1]) && ($indivslave[$k][1] != $indivslave[$fid][0]) && ($indivslave[$k][1] != $indivslave[$fid][1])){
+								$indivmaster[$k][11]++;							# 1P MI
+								$mi_cnt++;
+							}
+						}
+						elsif($mgt >= 0){
+							$indivmaster[$k][13]++;														# valid 1P MI-check
+							if(($indivslave[$k][0] != $indivslave[$mid][0]) && ($indivslave[$k][0] != $indivslave[$mid][1]) && ($indivslave[$k][1] != $indivslave[$mid][0]) && ($indivslave[$k][1] != $indivslave[$mid][1])){
+								$indivmaster[$k][11]++;													# 1P MI
+								$mi_cnt++;
+							}						
+						}
+					}
+					elsif($sex[$k] == 0){															# male offspring
+						if($indivslave[$k][0] != $indivslave[$k][1]){								# impossible genotype for male on chrX, next
+							next;
+						}
+						if($mgt >= 0){
+							$indivmaster[$k][13]++;														# valid 1P MI-check
+							if(($indivslave[$k][0] != $indivslave[$mid][0]) && ($indivslave[$k][0] != $indivslave[$mid][1])){
+								$indivmaster[$k][11]++;													# 1P MI
+								$mi_cnt++;
+							}						
+						}						
+					}					
+				}
+			}
+			if($total_mi > 0){
+				$prop_mi = $mi_cnt / $total_mi;
+			}			
 		}
 		for($i = 0; $i < @qc_names; $i++){
 			$temp = $outstream[$i];
@@ -1362,12 +1400,8 @@ sub read_vcf
 				$itr = 0;
 			}
 			$miss = $qc_gt_cnt_m[$i][$missing_gt_index] + $qc_gt_cnt_f[$i][$missing_gt_index];
-			if($isx){
-				printf($temp "%s\t%i\t%s\t%s\t%i\t%i\t%s\t%i\t%7.5f\t%i\t%i\t%s\t%7.5f\t%i\t%s\t.\t.\t.\t.\t%i\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%i\t%i\t%s\t%s\t%s\n",$chr, $bp, $pass_str, $fail_str, $miss, $gtf, $clean_str, $mono, $crate, $cb, $gpass, $maf_str, $depth, $hidp, $str_abh[$i], $fout, $vflag[$i], $rsid, $ref, $var, $qual, $tranche, $vtype, $itr, $malehets[$i], $str_clean[$i], $str_hetz[$i], $str_hwe[$i]);
-			}
-			else{
-				printf($temp "%s\t%i\t%s\t%s\t%i\t%i\t%s\t%i\t%7.5f\t%i\t%i\t%s\t%7.5f\t%i\t%s\t%i\t%i\t%7.5f\t.\t%i\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%i\t%s\t%s\t%s\n",$chr, $bp, $pass_str, $fail_str, $miss, $gtf, $clean_str, $mono, $crate, $cb, $gpass, $maf_str, $depth, $hidp, $str_abh[$i], $mi_cnt, $total_mi, $prop_mi, $fout, $vflag[$i], $rsid, $ref, $var, $qual, $tranche, $vtype, $itr, $str_clean[$i], $str_hetz[$i], $str_hwe[$i]);			
-			}
+			printf($temp "%s\t%i\t%s\t%s\t%i\t%i\t%s\t%i\t%7.5f\t%i\t%i\t%s\t%7.5f\t%i\t%s\t%i\t%i\t%7.5f\t.\t%i\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%i\t%s\t%s\t%s\n",$chr, $bp, $pass_str, $fail_str, $miss, $gtf, $clean_str, $mono, $crate, $cb, $gpass, $maf_str, $depth, $hidp, $str_abh[$i], $mi_cnt, $total_mi, $prop_mi, $fout, $vflag[$i], $rsid, $ref, $var, $qual, $tranche, $vtype, $itr, $str_clean[$i], $str_hetz[$i], $str_hwe[$i]);			
+
 
 		} # for($i = 0; $i < @qc_names; $i++)
 
@@ -1381,9 +1415,9 @@ sub read_vcf
 			}
 		}
 		$line_cnt++;
-		if(0 == ($line_cnt % 50)){
+		if(0 == ($line_cnt % 500)){
 			print STDERR ".";
-			if(0 == ($line_cnt % 5000)){
+			if(0 == ($line_cnt % 50000)){
 				print STDERR "\tbp= $bp\tcnt= $line_cnt\n";
 			}
 		}
@@ -1523,7 +1557,6 @@ sub print_indiv_master
 	my(@sex) = @$ref4;
 	my(%parameters) = %$ref1;
 	my(@indivmaster) = @$ref2;
-
 	my(@gt_lst);
 	my($i);
 	my($temp);
@@ -1625,7 +1658,7 @@ sub get_vcf_positions
 # the old hetZ calculation routine. 
 # Leave as it might get revived in the future
 
-=begin
+
 sub excess_het_gt_only
 {
 	my($hom1) = $_[0];
@@ -1670,7 +1703,7 @@ sub excess_het_gt_only
 
 	return($result);
 }
-=cut
+
 
 ##################################
 ##################################
@@ -2339,6 +2372,7 @@ sub read_pedfile
 	my(@affstat);
 	my(@usehwe);																		# 0 or 1 if used for zHet & HWE calculations
 	my(@dummy);
+	my(@has_parents);																	# 0 is no parents, 1 is one or both parents
 	my(%capture);																		# capture kit and map used
 	my(%race_gr_hash);																	# to numerically sort in the various RACEs like: DutchIsolate, Hispanic, etc.
 	my(%qc_gr_hash);																	# to numerically sort in the various QC_GROUPs like: ADNI, CC, FAM 
@@ -2392,6 +2426,7 @@ sub read_pedfile
 		@lst = split(/\s+/, $line);
 		$race_groups[$i] = -1;
 		$qc_groups[$i] = -1;
+		$has_parents[$i] = 0;
 		if($lst[7] eq "0"){																# do not use this sample/column in VCF, skip over it
 			$keep[$i] = 0;
 			$sex[$i] = -1;
@@ -2430,7 +2465,6 @@ sub read_pedfile
 		$affstat[$i] += 0;
 		$usehwe[$i] = $lst[9];
 		$usehwe[$i] += 0;
-
 		$temp = $race_gr_hash{$lst[$race_subset_col]};
 		if($temp){
 			$temp++;
@@ -2530,7 +2564,13 @@ sub read_pedfile
 			}
 			if(($p2 >= 0) && ($keep[$p2] == 0)){
 				$parent_index[$i][1] = -1;
-			}			
+			}
+			if(($parent_index[$i][0] >= 0) || ($parent_index[$i][1] >= 0)){
+				$has_parents[$i] = 1;
+#if(($parent_index[$i][0] >= 0) && ($parent_index[$i][1] >= 0)){
+#print "$sampleids[$i]\t$sampleids[$parent_index[$i][0]]\t$sampleids[$parent_index[$i][1]]\n";
+#}
+			}
 		}
 		else{
 			next;
@@ -2555,7 +2595,8 @@ sub read_pedfile
 #	print out "$sampleids[$i]\t$qc_groups[$i]\tfa=$parent_index[$i][0]\tmo=$parent_index[$i][1]\n";
 #}
 #close(out);
-	return(\@sex, \@parent_index, \@keep, \@race_groups, \@sampleids, \%vcf_ids1, \%race_assign_hash, \@qc_groups, \%qc_assign_hash, \@race_names, \@qc_names, \@affstat, $race_group_cnt, $qc_group_cnt, \@usehwe, \%capture, \@male_thresholds, \@real_sex);
+
+	return(\@sex, \@parent_index, \@keep, \@race_groups, \@sampleids, \%vcf_ids1, \%race_assign_hash, \@qc_groups, \%qc_assign_hash, \@race_names, \@qc_names, \@affstat, $race_group_cnt, $qc_group_cnt, \@usehwe, \%capture, \@male_thresholds, \@real_sex, \@has_parents);
 }
 
 ##################################
